@@ -1,64 +1,69 @@
-import puppeteer from "puppeteer";
-import fs from "fs";
+import puppeteer from "puppeteer-core";
+//import puppeteer from "puppeteer";
+import chromium from "@sparticuz/chromium"
+import { delay, waitRandom, getQuotes, selectBikeBrand, selectBikeCity, selectBikeModel, selectBikeVariant, selectBuyYear, selectRTO, confirmDetails } from './utils.js';
 
-(async () => {
-    const browser = await puppeteer.launch({
-        headless: false,
-        args: ["--disable-notifications"]
-    });
+export const scrapeQuotes = async (bikeData) => {
+    const {
+        bikeBrand, bikeModel, bikeVariant, bikeBuyYear,
+        city, rtoNumber, knowPolicyEndDate, whenToInsure,
+        previousPolicyEndDate, previousInsurer } = bikeData
 
-    const page = await browser.newPage();
-    await page.goto("https://www.insurancedekho.com/bike-insurance/quotes-page", { waitUntil: "networkidle2" });
+    try {
 
-    const tabs = [{
-        tabName: 'Comprehensive',
-        tabSelector: 'div.tabbs > div:nth-child(1)',
-    }, {
-        tabName: 'Third Party',
-        tabSelector: 'div.tabbs > div:nth-child(2)',
-    }, {
-        tabName: 'Own Damage',
-        tabSelector: 'div.tabbs > div:nth-child(3)',
-    }];
+        const browser = await puppeteer.launch({
+            // executablePath: await chromium.executablePath(),
+            // headless: chromium.headless,
+            // defaultViewport: null,
+            //args: [
+                //...chromium.args,
+                //"--disable-notifications",
+                //"--window-size=1920,1080"
+            //],
+            executablePath: await chromium.executablePath(),
+            headless: false,
+            defaultViewport: { height: 1000, width: 1920 },
+            args: [
+                "--disable-notifications",
+            ],
+        });
 
-    let allQuotes = [];
+        const page = await browser.newPage();
+        await page.goto("https://www.insurancedekho.com/bike-insurance", {
+            waitUntil: "networkidle2"
+        });
 
-    for (const tab of tabs) {
-        await page.click(tab.tabSelector);
-        await page.waitForSelector(".tpcards_bike", { visible: true });
-
-        const seeMoreBtn = await page.$("a.link.showmore.bold");
-        if (seeMoreBtn) {
-            await seeMoreBtn.click();
-            await page.waitForSelector(".tpcards_bike", { visible: true });
-        }
-
-        const quotes = await page.$$eval(
-            ".tpcards_bike",
-            (cards, tabName) =>
-                cards.map((card) => {
-                    const name = card.querySelector(".lname")?.innerText.trim();
-                    const price = card.querySelector(".starting span")?.innerText.trim();
-                    
-                    const features1 = Array.from(
-                        card.querySelectorAll(".keyfeature ul li")
-                    ).map((f) => f.innerText.trim());
-
-                    const features2 = Array.from(
-                        card.querySelectorAll(".tpAdvantage ul li span")
-                    ).map((f) => f.innerText.trim());
-
-                    const features = [...features1, ...features2];
-
-                    return { name, price, type: tabName, features };
-                }),
-            tab.tabName
+        await page.setUserAgent(
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36"
         );
 
-        allQuotes.push(...quotes);
+        await page.evaluateOnNewDocument(() => {
+            Object.defineProperty(navigator, "languages", { get: () => ["en-US", "en"] });
+            Object.defineProperty(navigator, "plugins", { get: () => [1, 2, 3, 4, 5] });
+        });
+
+        await selectBikeBrand(page, bikeBrand);
+        await selectBikeModel(page, bikeModel);
+        await selectBikeVariant(page, bikeVariant);
+        await selectBikeCity(page, city);
+        await selectRTO(page, rtoNumber);
+        await selectBuyYear(page, bikeBuyYear);
+
+        const submitBtn = await page.waitForSelector("button[name='submitBtn']", { visible: true });
+        await submitBtn.click();
+
+        console.log("✅ Submit button clicked");
+
+        await delay(1000);
+
+        await confirmDetails(page, knowPolicyEndDate, whenToInsure, previousPolicyEndDate, previousInsurer);
+
+        const quotes = await getQuotes(page);
+
+        return { quotes }
+
+    } catch (error) {
+        console.error("Error", error);
+        throw new Error(error.message);
     }
-
-    fs.writeFileSync("quotes.json", JSON.stringify(allQuotes, null, 2));
-
-    await browser.close();
-})();
+}
